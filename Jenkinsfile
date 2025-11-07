@@ -1,59 +1,41 @@
 pipeline {
-    agent any
-
+    agent none  // No global agent
+    
     stages {
-        stage('Build') {
+        stage('Build & Test') {
             agent {
                 docker {
-                image 'node:18-alpine'
-                reuseNode true
+                    image 'node:18-alpine'
                 }
             }
             steps {
                 sh '''
-                ls -la
-                node --version
-                npm --version
-                npm ci
-                npm run build
-                '''
-                
-            }
-        }
-        stage('Test') {
-            agent {
-                docker {
-                image 'node:18-alpine'
-                reuseNode true
-                }
-            }
-            steps {
-                sh '''
-                npm test
+                    npm ci
+                    npm run build
+                    npm test
                 '''
             }
         }
+        
         stage('Deploy') {
             agent {
                 docker {
-                image 'node:18-alpine'
-                reuseNode true
+                    image 'node:18-alpine'
                 }
             }
             steps {
                 sh '''
-                npm install netlify-cli
-                node_modules/.bin/netlify --version
+                    npm install -g netlify-cli
+                    netlify --version
+                    # Deploy commands
                 '''
             }
-            
         }
-        
     }
+    
     post {
         always {
             junit 'test-results/junit.xml'
         }
     }
-    
 }
