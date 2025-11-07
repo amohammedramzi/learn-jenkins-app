@@ -1,41 +1,44 @@
 pipeline {
-    agent none  // No global agent
+    agent {
+        docker {
+            image 'node:18-alpine'
+            // Runs as non-root 'node' user by default
+        }
+    }
     
     stages {
-        stage('Build & Test') {
-            agent {
-                docker {
-                    image 'node:18-alpine'
-                }
-            }
+        stage('Build') {
             steps {
                 sh '''
+                    node --version
+                    npm --version
                     npm ci
                     npm run build
-                    npm test
                 '''
             }
         }
         
-        stage('Deploy') {
-            agent {
-                docker {
-                    image 'node:18-alpine'
+        stage('Test') {
+            steps {
+                sh 'npm test'
+            }
+            post {
+                always {
+                    junit 'test-results/junit.xml'
                 }
             }
+        }
+        
+        stage('Deploy') {
             steps {
                 sh '''
-                    npm install -g netlify-cli
-                    netlify --version
-                    # Deploy commands
+                    # Install Netlify CLI locally instead of globally
+                    npm install netlify-cli
+                    npx netlify --version
+                    # Add your actual Netlify deploy command here
+                    # npx netlify deploy --prod --dir=build
                 '''
             }
-        }
-    }
-    
-    post {
-        always {
-            junit 'test-results/junit.xml'
         }
     }
 }
