@@ -10,27 +10,27 @@ pipeline {
         }
 
         stage('Build') {
-            agent {
-                docker {
-                    image 'node:18-alpine'
-                    reuseNode true
-                    args '--user root'  // Run as root to avoid permission issues
-                }
-            }
-            steps {
-                sh '''
-                    ls -la
-                    node --version
-                    npm --version
-                    # Clean node_modules to avoid permission issues
-                    rm -rf node_modules
-                    rm -f package-lock.json
-                    npm ci
-                    npm run build
-                    ls -la
-                '''
-            }
+    agent {
+        docker {
+            image 'node:18-alpine'
+            reuseNode true
+            args '--user root'
         }
+    }
+    steps {
+        sh '''
+            ls -la
+            node --version
+            npm --version
+            # Clean both node_modules and package-lock.json, then use npm install
+            rm -rf node_modules
+            rm -f package-lock.json
+            npm install
+            npm run build
+            ls -la
+        '''
+    }
+}
 
         stage('Tests') {
             parallel {
