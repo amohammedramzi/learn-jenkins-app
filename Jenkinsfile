@@ -2,12 +2,12 @@ pipeline {
     agent any
 
     stages {
-
         stage('Build') {
             agent {
                 docker {
                     image 'node:18-alpine'
                     reuseNode true
+                    args '--user root'  // Run as root to avoid permission issues
                 }
             }
             steps {
@@ -15,6 +15,8 @@ pipeline {
                     ls -la
                     node --version
                     npm --version
+                    # Clean node_modules to avoid permission issues
+                    rm -rf node_modules
                     npm ci
                     npm run build
                     ls -la
@@ -29,18 +31,27 @@ pipeline {
                         docker {
                             image 'node:18-alpine'
                             reuseNode true
+                            args '--user root'  // Run as root to avoid permission issues
                         }
                     }
 
                     steps {
                         sh '''
-                            #test -f build/index.html
-                            npm test
+                            # Install jest-junit if not already present
+                            npm list jest-junit || npm install --save-dev jest-junit
+                            
+                            # Run tests - they should automatically generate test-results/junit.xml
+                            npm test -- --ci --watchAll=false
+                            
+                            # Check if the junit.xml file was created
+                            ls -la test-results/ || echo "test-results directory not found"
+                            ls -la test-results/junit.xml || echo "junit.xml file not found"
                         '''
                     }
                     post {
                         always {
-                            junit 'jest-results/junit.xml'
+                            // Update the path to match where your junit.xml is actually located
+                            junit 'test-results/junit.xml'
                         }
                     }
                 }
@@ -50,21 +61,40 @@ pipeline {
                         docker {
                             image 'mcr.microsoft.com/playwright:v1.39.0-jammy'
                             reuseNode true
+                            args '--ipc=host --user root'  // Add IPC host and run as root
                         }
                     }
 
                     steps {
                         sh '''
-                            npm install serve
-                            node_modules/.bin/serve -s build &
+                            # Install serve if not present
+                            npm list serve || npm install serve
+                            
+                            # Start the server in background
+                            node_modules/.bin/serve -s build -p 3000 &
+                            SERVE_PID=$!
+                            echo "Server started with PID: $SERVE_PID"
+                            
+                            # Wait for server to start
                             sleep 10
-                            npx playwright test  --reporter=html
+                            
+                            # Test if server is responding
+                            curl -f http://localhost:3000
+                            
+                            # Run Playwright tests
+                            npx playwright test --reporter=html
+                            
+                            # Kill the server
+                            kill $SERVE_PID
                         '''
                     }
 
                     post {
                         always {
-                            publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, keepAll: false, reportDir: 'playwright-report', reportFiles: 'index.html', reportName: 'Playwright HTML Report', reportTitles: '', useWrapperFileDirectly: true])
+                            // Use archiveArtifacts instead of publishHTML since the plugin is not installed
+                            archiveArtifacts artifacts: 'playwright-report/**/*'
+                            // Alternative: just archive the HTML file
+                            archiveArtifacts artifacts: 'playwright-report/index.html'
                         }
                     }
                 }
@@ -76,6 +106,7 @@ pipeline {
                 docker {
                     image 'node:18-alpine'
                     reuseNode true
+                    args '--user root'  // Run as root to avoid permission issues
                 }
             }
             steps {
@@ -84,6 +115,20 @@ pipeline {
                     node_modules/.bin/netlify --version
                 '''
             }
+        }
+    }
+    
+    post {
+        always {
+            echo "Pipeline completed - check test results above"
+            // Archive all important artifacts
+            archiveArtifacts artifacts: 'build/**/*,test-results/**/*,playwright-report/**/*'
+        }
+        failure {
+            echo "Pipeline failed! Check the test results above. ❌"
+        }
+        success {
+            echo "Pipeline succeeded! ✅"
         }
     }
 }
